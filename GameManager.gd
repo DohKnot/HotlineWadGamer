@@ -1,5 +1,30 @@
 extends Node
 
+# Gameplay stuff
+enum Weapon_t {
+	BLUNT,
+	GUN,
+	MELEE,
+	DOG,
+	FATSO
+}
+enum Weapon {
+	UNARMED,
+	M16,
+	KALASHNIKOV,
+	SHOTGUN,
+	DOUBLEBARREL,
+	SILENCER,
+	_9MM,
+	CLUB,
+	BAT,
+	PIPE,
+	KNIFE,
+	DOG,
+	FAT,
+}
+
+# Resource stuff
 var player_wad = null
 var env_wad = null
 var sprite_key_table = null
@@ -36,3 +61,21 @@ func _init():
 			'parent' : int(l[4])
 		}
 		l = obj_data_file.get_line().split(',')
+	#print(object_table[])
+
+func weapon_type(weapon):
+	match (weapon):
+		GameManager.Weapon.SILENCER,\
+		GameManager.Weapon.M16,\
+		GameManager.Weapon.KALASHNIKOV,\
+		GameManager.Weapon.SHOTGUN,\
+		GameManager.Weapon.DOUBLEBARREL:
+			return GameManager.Weapon_t.GUN
+		GameManager.Weapon.BAT,\
+		GameManager.Weapon.CLUB,\
+		GameManager.Weapon.PIPE,\
+		GameManager.Weapon.KNIFE:
+			return GameManager.Weapon_t.MELEE
+		GameManager.Weapon.FAT: return GameManager.Weapon_t.FATSO
+		GameManager.Weapon.DOG: return GameManager.Weapon_t.DOG
+	return GameManager.Weapon_t.BLUNT

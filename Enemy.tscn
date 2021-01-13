@@ -1,0 +1,64 @@
+[gd_scene load_steps=5 format=2]
+
+[ext_resource path="res://Enemy.gd" type="Script" id=1]
+[ext_resource path="res://WadSprite.gd" type="Script" id=2]
+[ext_resource path="res://addons/smoothing/smoothing_2d.gd" type="Script" id=3]
+
+[sub_resource type="RectangleShape2D" id=1]
+extents = Vector2( 12, 12 )
+
+[node name="Enemy" type="Node2D" groups=[
+"Enemy",
+]]
+script = ExtResource( 1 )
+Legs = NodePath("Smoothing2D/Legs")
+Body = NodePath("Smoothing2D/AnimatedSprite")
+KBody = NodePath("KBody")
+
+[node name="KBody" type="KinematicBody2D" parent="."]
+collision_layer = 2
+collision_mask = 2147483652
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="KBody"]
+shape = SubResource( 1 )
+
+[node name="Label" type="Label" parent="KBody"]
+margin_left = 16.1809
+margin_top = -10.7873
+margin_right = 56.1809
+margin_bottom = 3.21273
+text = "xspeed"
+__meta__ = {
+"_edit_use_anchors_": false
+}
+
+[node name="Label2" type="Label" parent="KBody"]
+margin_left = 15.9241
+margin_top = 2.31156
+margin_right = 61.9241
+margin_bottom = 16.3116
+text = "yspeed"
+__meta__ = {
+"_edit_use_anchors_": false
+}
+
+[node name="Label3" type="Label" parent="KBody"]
+margin_left = 15.9241
+margin_top = 16.8394
+margin_right = 61.9241
+margin_bottom = 30.8394
+text = "yspeed"
+__meta__ = {
+"_edit_use_anchors_": false
+}
+
+[node name="Smoothing2D" type="Node2D" parent="."]
+script = ExtResource( 3 )
+target = NodePath("../KBody")
+flags = 51
+
+[node name="AnimatedSprite" type="AnimatedSprite" parent="Smoothing2D"]
+script = ExtResource( 2 )
+
+[node name="Legs" type="AnimatedSprite" parent="Smoothing2D"]
+script = ExtResource( 2 )

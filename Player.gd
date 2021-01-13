@@ -12,6 +12,7 @@ onready var legs_dummy = $Legs
 
 # Player Variables
 export var myspeed = 3
+export var weapon = GameManager.Weapon.UNARMED
 var myxspeed = 0
 var myyspeed = 0
 # attack duration
@@ -20,28 +21,80 @@ var reload = 0
 # Called when the node enters the scene tree for the first time.
 func _ready():
 	_wad = GameManager.player_wad
-	sprite_dummy.frames = _wad.meta_sprite("Atlases/Player_Jacket.meta")
-	sprite_dummy.play("sprJacketWalkUnarmed")
+#	sprite_dummy.frames = _wad.meta_sprite("Atlases/Player_Jacket.meta")
+#	sprite_dummy.play("sprJacketWalkUnarmed")
+#	sprite_dummy.speed_scale = 0
+#	legs_dummy.frames = _wad.meta_sprite("Atlases/Enemy_Gang.meta")
+#	legs_dummy.play("sprEGangLegs")
+#	legs_dummy.speed_scale = 0
+	init_player("sprZebraWalkUnarmed")
+
+func init_player(spr_name):
+	var d = {
+	#	token				legs				faction
+		"Jacket":	["Enemy_Gang",		"sprEGang",		"Player_Jacket"],
+		"Biker":		["Player_Biker",		"sprPolice",		"Player_Biker"],
+		"Bear":		["Player_Bear",		"sprEGang",		"Player_Bear"],
+		"Zebra":		["Player_Zebra",		"sprZebra",		"Player_Zebra"],
+		"Tiger":		["Player_Tiger",		"sprTiger",		"Player_Tiger"],
+		"Swan":		["Player_Swan",		"sprSwan",		"Player_Swan"],
+		"Nicke":		["Player_Nicke",		"sprSoldier",		"Player_Nicke"],
+		"Cop":		["Player_Cop",		"sprPrisoner",	"Player_Cop"],
+		"Writer":	["Player_Writer",		"sprWriter",		"Player_Writer"],
+		"RatPrison":	["Player_Rat",		"sprRatPrison",	"Player_Rat"],
+		"RatGuard":	["Enemy_Guards",		"sprGuard",		"Player_Rat"],
+		"Rat":		["Player_Rat",		"sprRat",		"Player_Rat"],
+		"Pig":		["Player_PigButcher",	"sprPig",		"Player_PigButcher"],
+		"Hammer":	["Player_Hammarin",	"sprHammer",		"Player_Hammarin"],
+		"Son":		["Enemy_Mafia",		"sprSon",		"Player_Son"],
+		"Henchman":	["Enemy_Mafia",		"sprEMafia",		"Player_Henchman"],
+	}
+	
+	var token = "Zebra"
+	var body_faction = d[token][2]
+	var legs_faction = d[token][0]
+	var legs_name = d[token][1]
+	for i in d.keys():
+		if i in spr_name:
+			body_faction = d[i][2]
+			legs_faction = d[i][0]
+			legs_name = d[i][1]
+			break
+	
+	sprite_dummy.frames = _wad.meta_sprite("Atlases/" + body_faction + ".meta")
+	sprite_dummy.play(spr_name)
+	sprite_dummy.stop()
 	sprite_dummy.speed_scale = 0
-	legs_dummy.frames = _wad.meta_sprite("Atlases/Enemy_Gang.meta")
-	legs_dummy.play("sprEGangLegs")
+	legs_dummy.frames = _wad.meta_sprite("Atlases/" + legs_faction + ".meta")
+	legs_dummy.play(legs_name + "Legs")
+	legs_dummy.stop()
 	legs_dummy.speed_scale = 0
 
 func _process(delta):
+	if Input.is_action_just_pressed("restart"): get_tree().reload_current_scene()
 	player_move(delta)
 	sprite_dummy.rotation = $Cursor.position.angle()
+	if Input.is_action_pressed("attack"):
+		attack()
+	var r  = 0.13 + 0.02 * randf()
+	$Light.scale = Vector2(r, r)
 	update()
+
+func _input(event):
+	if event.is_action_pressed("attack"):
+		attack()
 
 func _draw():
 	for c in get_children():
 		if c is AnimatedSprite:
 			var sprite_tex = c.frames.get_frame(c.animation, c.frame)
-			draw_set_transform(Vector2.ZERO, c.rotation, Vector2.ONE)
-			draw_texture(sprite_tex, c.position + Vector2(1,1).rotated(-c.rotation) - sprite_tex.get_size()/2 + c.offset, Color(0,0,0,0.5))
+			var v = Vector2(-1 if c.flip_h else 1,   -1 if c.flip_v else 1)
+			draw_set_transform(Vector2.ZERO, v.y * c.rotation, v)
+			draw_texture(sprite_tex, c.position + v*Vector2(1,1).rotated(-c.rotation) - sprite_tex.get_size()/2 + c.offset, Color(0,0,0,0.5))
 
 func player_move(delta):
 	var normalized_delta = 60 * delta
-	var d = 0.5 * 60 * delta
+	var d = 0.5 * normalized_delta
 	var x = position.x;
 	var y = position.y;
 	
@@ -160,15 +213,31 @@ func player_move(delta):
 func place_free(x,y):
 	var v = Vector2(x,y) - position
 	#var c = move_and_collide(Vector2(1000 * (v.x/1000), 1000 * (v.y/1000)), true, true, true)
-	var c = move_and_collide(v, true, true, true)
-	#if c:
-	#	return false
-	#return true
+	#var c = move_and_collide(v, true, true, true)
+	var c = test_move(transform, v)
 	return c
 	
 	#print(Vector2(x,y) - position)
 	#return test_move(transform, Vector2(x,y) - position)
 
-# Called every frame. 'delta' is the elapsed time since the previous frame.
-#func _process(delta):
-#	pass
+func attack():
+	if "Walk" in sprite_dummy.animation:
+		if "Unarmed" in sprite_dummy.animation:
+			sprite_dummy.play(sprite_dummy.animation.replace("WalkUnarmed", "AttackPunch"))
+			sprite_dummy.speed_scale = 0.35
+		else:
+			sprite_dummy.play(sprite_dummy.animation.replace("Walk", "Attack"))
+			sprite_dummy.speed_scale = 0.35
+
+func _on_AnimatedSprite_animation_finished():
+	if GameManager.weapon_type(weapon) == GameManager.Weapon_t.MELEE or weapon == GameManager.Weapon.UNARMED:
+		sprite_dummy.flip_v = !sprite_dummy.flip_v
+	if "Attack" in sprite_dummy.animation:
+		if "Punch" in sprite_dummy.animation:
+			sprite_dummy.play(sprite_dummy.animation.replace("AttackPunch", "WalkUnarmed"))
+			sprite_dummy.stop()
+			sprite_dummy.frame = 0
+		else:
+			sprite_dummy.play(sprite_dummy.animation.replace("Attack", "Walk"))
+			sprite_dummy.stop()
+			sprite_dummy.frame = 0
