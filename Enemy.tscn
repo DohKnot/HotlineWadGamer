@@ -1,11 +1,11 @@
-[gd_scene load_steps=5 format=2]
+[gd_scene load_steps=6 format=2]
 
 [ext_resource path="res://Enemy.gd" type="Script" id=1]
 [ext_resource path="res://WadSprite.gd" type="Script" id=2]
 [ext_resource path="res://addons/smoothing/smoothing_2d.gd" type="Script" id=3]
+[ext_resource path="res://SimpleLight.tscn" type="PackedScene" id=4]
 
-[sub_resource type="RectangleShape2D" id=1]
-extents = Vector2( 12, 12 )
+[sub_resource type="CircleShape2D" id=1]
 
 [node name="Enemy" type="Node2D" groups=[
 "Enemy",
@@ -58,7 +58,11 @@ target = NodePath("../KBody")
 flags = 51
 
 [node name="AnimatedSprite" type="AnimatedSprite" parent="Smoothing2D"]
+z_index = 1
 script = ExtResource( 2 )
 
 [node name="Legs" type="AnimatedSprite" parent="Smoothing2D"]
 script = ExtResource( 2 )
+
+[node name="SimpleLight" parent="Smoothing2D" instance=ExtResource( 4 )]
+r = 28.0

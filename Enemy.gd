@@ -36,6 +36,9 @@ var state = 0
 var random_timer = 0
 
 var delta_time = 0
+var _body_index = 0
+var _leg_index = 0
+var path = []
 
 func _ready():
 	
@@ -63,9 +66,16 @@ func _physics_process(delta):
 		1: state1()
 		2: state2()
 		3: state3()
-	var v = speed * Vector2(cos(deg2rad(direction)), sin(deg2rad(direction))) * delta_time
-	KBody.position += v
+		-1:return
+	var v = speed * Vector2(cos(deg2rad(direction)), sin(deg2rad(direction)))# * delta_time
+	#KBody.position += v
+	KBody.move_and_slide(v*60)
 	Body.rotation_degrees = direction
+	Legs.rotation_degrees = direction
+	_body_index += speed * 0.15
+	Body.frame = int(_body_index) % Body.frames.get_frame_count(Body.animation)
+	_leg_index += speed * 0.15
+	Legs.frame = int(_leg_index) % Legs.frames.get_frame_count(Legs.animation)
 	$KBody/Label.text = str(state)
 	$KBody/Label2.text = str(checkReload)
 	$KBody/Label3.text = str(alertWait)
@@ -94,13 +104,13 @@ func init_enemy(spr_name):
 
 	var d = {
 	#	Faction		Normal legs		Fat legs
-		"Mafia":		["sprEMafia",		"sprEMafiaFat"],
-		"Gang":		["sprEGang",		"sprEGangFat"],
-		"Police":	["sprPolice",		"sprFatPolice"],
+		"Mafia":	["sprEMafia",	"sprEMafiaFat"],
+		"Gang":		["sprEGang",	"sprEGangFat"],
+		"Police":	["sprPolice",	"sprFatPolice"],
 		"Soldier":	["sprSoldier",	"sprFatSoldier"],
 		"Prisoner":	["sprPrisoner",	"sprPrisonerFat"],
-		"Colombian":	["sprColombian",	"sprEMafiaFat"],
-		"Guard":		["sprGuard"],
+		"Colombian":["sprColombian","sprEMafiaFat"],
+		"Guard":	["sprGuard"],
 		"Dog":		[],
 #		"PigButcher":["sprVictim"],
 	}
@@ -135,7 +145,7 @@ func init_enemy(spr_name):
 	players = get_tree().get_nodes_in_group("Player")
 
 #func weapon_to_anim(_weapon):
-#	if weapon_type(_weapon) == GameManager.Weapon.FATSO:
+#	if weapon_type(_weapon) == GameManager.Weapon.FAT:
 #		return faction + "FatWalk"
 #	var weapon_name = GameManager.Weapon.keys()[weapon]
 #	return faction + "Walk" + weapon_name.capitalize().replace(' ','')
@@ -150,12 +160,61 @@ func init_enemy(spr_name):
 #			return sprite_name.substr(0, sprite_name.find(i))
 #	assert(true == false)
 
+func die():
+	switch_state(-1)
+
 func weapon_type(weapon):
 	return GameManager.weapon_type(weapon)
 
 func switch_state(new_state):
-	#match new_state:
-	#	
+	if new_state == -1 and state != -1:
+		# Drop weapon if can
+		if weapon_type(weapon) != GameManager.Weapon_t.FAT\
+		and weapon_type(weapon) != GameManager.Weapon_t.DOG:
+			var w = GameManager.weapon_prefab.instance()
+			var lvl = get_tree().get_nodes_in_group("Level")[0]
+			lvl.add_child(w)
+			w.global_position = KBody.global_position
+			w.speed = 2 + randf() * 2
+			w.direction = randf() * 360
+			w.weapon_id = weapon
+			var l = GameManager.player_wad.single_frame("Atlases/Weapons.meta", "spr" + GameManager.get_weapon_name(weapon))
+			w.sprite.texture = l[0]
+			w.sprite.offset = l[1]
+			w.get_node("Smoothing2D").teleport()
+		# Turn into a bullet spunge
+		var bullets = get_tree().get_nodes_in_group("Bullet")
+		var kill_dir = 0
+		var kill_spd = 2 + randf() * 1
+		for b in bullets:
+			if b.KBody.global_position.distance_squared_to(KBody.global_position) < 60*60:
+				kill_dir = b.rotation
+				kill_spd += 0.25
+				b.queue_free()
+		# Jill yorself
+		var dead = GameManager.object_prefab.instance()
+		get_parent().add_child(dead)
+		dead.global_position = KBody.global_position
+		dead.sprite.get_parent().teleport()
+		dead.direction = kill_dir
+		dead.sprite.rotation = kill_dir
+		dead.speed = kill_spd
+		dead.friction = 0.25
+		dead.z_index = -1
+		for a in Body.frames.get_animation_names():
+			if "Dead" in a:
+				dead.sprite.texture = Body.frames.get_frame(a, randi() % Body.frames.get_frame_count(a))
+				break
+		#AnimatedSprite.new().frames.get_frame(Body.animation, Body.frame)
+		#var l = GameManager.player_wad.single_frame("")
+		queue_free()
+	if new_state == 3:
+		var navmap = get_tree().get_nodes_in_group("NavMap")[0]
+		path = navmap.get_astar_path(KBody.global_position, player_focused.position)
+		if not path or len(path) < 2:
+			switch_state(0)
+			return
+		_target_point_world = path[1]
 	state = new_state
 
 func state0():
@@ -217,21 +276,23 @@ func state1():
 		switch_state(0)
 	# TODO: add blunt (unarmed) edge case
 	var d = 12*12
+	var r = RUNSPEED
 	match (weapon_type(weapon)):
 		GameManager.Weapon_t.GUN:
 			d = 80*80
 			continue
+		GameManager.Weapon_t.DOG:
+			r = RUNSPEED_DOG
+			continue
 		GameManager.Weapon_t.GUN,\
 		GameManager.Weapon_t.MELEE,\
-		GameManager.Weapon_t.FATSO:
+		GameManager.Weapon_t.DOG,\
+		GameManager.Weapon_t.FAT:
 			if KBody.global_position.distance_squared_to(player_focused.position) > d:
-				speed = min(speed + 0.5 * delta_time, RUNSPEED)
+				speed = min(speed + 0.5 * delta_time, r)
 			else:
 				speed = max(speed - 0.25 * delta_time, 0)
-			#direction = rad2deg(position.angle_to_point(player_focused.position)) - 180
 			direction = hm1_rotate(direction, rad2deg(player_focused.position.angle_to_point(KBody.global_position)), TURNSPEED * delta_time)
-		GameManager.Weapon_t.DOG:
-			speed = max(speed + 0.25 * delta_time, RUNSPEED_DOG * delta_time)
 	var los = check_los() # 0 none, 1 direct, 2 indirect
 	#if (los == 1): switch_state(1)
 	if (los == 0): switch_state(3)
@@ -250,38 +311,51 @@ func state2():
 	
 	switch_state(3)
 
+var _target_point_world = Vector2.ZERO
+
 func state3():
-	switch_state(0)
-	pass
+	# pathing nonsense
+	#var _target_point_world = path[path_index]
+	speed = 0
+	#var desired_velocity = (_target_point_world - KBody.global_position).normalized() * 5 * 60# * speed
+	#var steering = desired_velocity - _velocity
+	#_velocity += steering
+	#KBody.position += _velocity * get_process_delta_time()
+	direction = rad2deg((_target_point_world - KBody.global_position).angle())
+	speed = PATHSPEED
+	var _arrived_to_next_point = KBody.global_position.distance_to(_target_point_world) < 6
+	if _arrived_to_next_point:
+		path.remove(0)
+		if len(path) == 0:
+			switch_state(0)
+			return
+		_target_point_world = path[0]
+	
+	var los = check_los() # 0 none, 1 direct, 2 indirect
+	if (los == 1): switch_state(1)
+	#if (los == 2): switch_state(2)
+
 
 func check_los():
 	# 0 none, 1 direct, 2 indirect
 	var space_state = get_world_2d().direct_space_state
 	var los = 0
-	if player_focused == null:
-		for p in players:
-			var dist = KBody.global_position.distance_squared_to(p.position)
-			var angl = rad2deg(KBody.global_position.angle_to_point(p.position))
-			var vd = Vector2(cos(deg2rad(angl+90)), sin(deg2rad(angl+90))) * 8
-			var result1 = space_state.intersect_ray(KBody.global_position + vd, p.position + vd, [KBody], 0b00000000000000000101)
-			vd = Vector2(cos(deg2rad(angl-90)), sin(deg2rad(angl-90))) * 8
-			var result2 = space_state.intersect_ray(KBody.global_position + vd, p.position + vd, [KBody], 0b00000000000000000101)
-			#if KBody.global_position.distance_squared_to(p.position) < 100*100:
-			if result1 and result2 and "PlayerPlayer" == result1.collider.name+result2.collider.name:
-				player_focused = p
-				los = 1
-				return los
-	else:
-		var p = player_focused
+	var _players = players
+	if player_focused != null:
+		_players = [player_focused]
+	for p in _players:
 		var dist = KBody.global_position.distance_squared_to(p.position)
 		var angl = rad2deg(KBody.global_position.angle_to_point(p.position))
-		var result = space_state.intersect_ray(KBody.global_position, p.position, [KBody], 0b00000000000000000101)
+		var vd = Vector2(cos(deg2rad(angl+90)), sin(deg2rad(angl+90))) * 4
+		var result1 = space_state.intersect_ray(KBody.global_position + vd, p.position + vd, [KBody], 0b00000000000000000101)
+		vd = Vector2(cos(deg2rad(angl-90)), sin(deg2rad(angl-90))) * 4
+		var result2 = space_state.intersect_ray(KBody.global_position + vd, p.position + vd, [KBody], 0b00000000000000000101)
 		#if KBody.global_position.distance_squared_to(p.position) < 100*100:
-		if result and "Player" == result.collider.name:
+		if result1 and result2 and "PlayerPlayer" == result1.collider.name+result2.collider.name:
 			player_focused = p
 			los = 1
 			return los
-	if los == 0: player_focused = null
+	#if los == 0: player_focused = null
 	return los
 
 func place_free(v):

@@ -1,0 +1,44 @@
+[gd_scene load_steps=6 format=2]
+
+[ext_resource path="res://Bullet.gd" type="Script" id=1]
+[ext_resource path="res://SimpleLight.tscn" type="PackedScene" id=2]
+[ext_resource path="res://addons/smoothing/smoothing_2d.gd" type="Script" id=3]
+
+[sub_resource type="RectangleShape2D" id=1]
+extents = Vector2( 8, 1 )
+
+[sub_resource type="CanvasItemMaterial" id=2]
+blend_mode = 1
+
+[node name="Bullet" type="Node2D" groups=[
+"Bullet",
+]]
+script = ExtResource( 1 )
+sprite = NodePath("Smoothing2D/Sprite")
+KBody = NodePath("KBody")
+
+[node name="KBody" type="KinematicBody2D" parent="."]
+collision_layer = 8
+collision_mask = 2147483652
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="KBody"]
+shape = SubResource( 1 )
+
+[node name="Smoothing2D" type="Node2D" parent="."]
+script = ExtResource( 3 )
+target = NodePath("../KBody")
+flags = 51
+
+[node name="Sprite" type="Sprite" parent="Smoothing2D"]
+material = SubResource( 2 )
+z_index = 1
+
+[node name="SimpleLight" parent="Smoothing2D" instance=ExtResource( 2 )]
+self_modulate = Color( 1, 1, 1, 0.0392157 )
+r = 20.0
+
+[node name="Timer" type="Timer" parent="."]
+wait_time = 2.0
+one_shot = true
+autostart = true
+[connection signal="timeout" from="Timer" to="." method="_on_Timer_timeout"]

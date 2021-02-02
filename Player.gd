@@ -11,8 +11,10 @@ onready var sprite_dummy = $AnimatedSprite
 onready var legs_dummy = $Legs
 
 # Player Variables
-export var myspeed = 3
-export var weapon = GameManager.Weapon.UNARMED
+export var myspeed = 3.0
+export(GameManager.Weapon) var _weapon
+var direction = 0
+var weapon
 var myxspeed = 0
 var myyspeed = 0
 # attack duration
@@ -28,26 +30,27 @@ func _ready():
 #	legs_dummy.play("sprEGangLegs")
 #	legs_dummy.speed_scale = 0
 	init_player("sprZebraWalkUnarmed")
+	give_weapon(_weapon)
 
 func init_player(spr_name):
 	var d = {
 	#	token				legs				faction
 		"Jacket":	["Enemy_Gang",		"sprEGang",		"Player_Jacket"],
-		"Biker":		["Player_Biker",		"sprPolice",		"Player_Biker"],
+		"Biker":	["Player_Biker",	"sprPolice",	"Player_Biker"],
 		"Bear":		["Player_Bear",		"sprEGang",		"Player_Bear"],
-		"Zebra":		["Player_Zebra",		"sprZebra",		"Player_Zebra"],
-		"Tiger":		["Player_Tiger",		"sprTiger",		"Player_Tiger"],
+		"Zebra":	["Player_Zebra",	"sprZebra",		"Player_Zebra"],
+		"Tiger":	["Player_Tiger",	"sprTiger",		"Player_Tiger"],
 		"Swan":		["Player_Swan",		"sprSwan",		"Player_Swan"],
-		"Nicke":		["Player_Nicke",		"sprSoldier",		"Player_Nicke"],
+		"Nicke":	["Player_Nicke",	"sprSoldier",	"Player_Nicke"],
 		"Cop":		["Player_Cop",		"sprPrisoner",	"Player_Cop"],
-		"Writer":	["Player_Writer",		"sprWriter",		"Player_Writer"],
-		"RatPrison":	["Player_Rat",		"sprRatPrison",	"Player_Rat"],
-		"RatGuard":	["Enemy_Guards",		"sprGuard",		"Player_Rat"],
+		"Writer":	["Player_Writer",	"sprWriter",	"Player_Writer"],
+		"RatPrison":["Player_Rat",		"sprRatPrison",	"Player_Rat"],
+		"RatGuard":	["Enemy_Guards",	"sprGuard",		"Player_Rat"],
 		"Rat":		["Player_Rat",		"sprRat",		"Player_Rat"],
-		"Pig":		["Player_PigButcher",	"sprPig",		"Player_PigButcher"],
-		"Hammer":	["Player_Hammarin",	"sprHammer",		"Player_Hammarin"],
+		"Pig":		["Player_PigButcher","sprPig",		"Player_PigButcher"],
+		"Hammer":	["Player_Hammarin",	"sprHammer",	"Player_Hammarin"],
 		"Son":		["Enemy_Mafia",		"sprSon",		"Player_Son"],
-		"Henchman":	["Enemy_Mafia",		"sprEMafia",		"Player_Henchman"],
+		"Henchman":	["Enemy_Mafia",		"sprEMafia",	"Player_Henchman"],
 	}
 	
 	var token = "Zebra"
@@ -69,28 +72,136 @@ func init_player(spr_name):
 	legs_dummy.play(legs_name + "Legs")
 	legs_dummy.stop()
 	legs_dummy.speed_scale = 0
+	
+	for w in GameManager.Weapon.keys():
+		if w.capitalize().replace(' ','') in spr_name:
+			weapon = GameManager.Weapon[w]
+
+func give_weapon(_weapon):
+	var z = sprite_dummy.animation.replace('Attack', 'Walk')
+	z = z.replace('Punch', 'Unarmed')
+	z = z.replace('Barrel1', '') # double barrel being annoying
+	z = z.replace('Barrel2', '')
+	z = z.replace(GameManager.Weapon.keys()[weapon].capitalize().replace(' ',''), GameManager.Weapon.keys()[_weapon].capitalize().replace(' ',''))
+	sprite_dummy.play(z)
+	sprite_dummy.stop()
+	sprite_dummy.speed_scale = 0
+	weapon = _weapon
+	# TODO: give ammo
 
 func _process(delta):
-	if Input.is_action_just_pressed("restart"): get_tree().reload_current_scene()
+	direction = $Cursor.position.angle()
 	player_move(delta)
-	sprite_dummy.rotation = $Cursor.position.angle()
+	$Area2D.position = Vector2(12,0).rotated(direction)
+	sprite_dummy.rotation = direction
 	if Input.is_action_pressed("attack"):
 		attack()
-	var r  = 0.13 + 0.02 * randf()
-	$Light.scale = Vector2(r, r)
+	reload -= delta * 60
 	update()
 
+var pathpos = Vector2.ZERO
 func _input(event):
 	if event.is_action_pressed("attack"):
 		attack()
+	if event.is_action_pressed("drop"):
+		drop()
+	if event.is_action_pressed("execute"):
+		get_tree().get_nodes_in_group("Level")[0].get_node("NavMap").get_astar_path(pathpos, position)
+		pathpos = position
 
 func _draw():
 	for c in get_children():
 		if c is AnimatedSprite:
 			var sprite_tex = c.frames.get_frame(c.animation, c.frame)
-			var v = Vector2(-1 if c.flip_h else 1,   -1 if c.flip_v else 1)
+			var v = c.scale
 			draw_set_transform(Vector2.ZERO, v.y * c.rotation, v)
 			draw_texture(sprite_tex, c.position + v*Vector2(1,1).rotated(-c.rotation) - sprite_tex.get_size()/2 + c.offset, Color(0,0,0,0.5))
+
+func place_free(x,y):
+	return true
+	var v = Vector2(x,y) - position
+	#var c = move_and_collide(Vector2(1000 * (v.x/1000), 1000 * (v.y/1000)), true, true, true)
+	#var c = move_and_collide(v, true, true, true)
+	var c = test_move(transform, v)
+	return !c
+
+func drop():
+	var lvl = get_tree().get_nodes_in_group("Level")[0]
+	# queue pickup
+	var dropped_weapons = get_tree().get_nodes_in_group("Weapon")
+	var pickup_weapon = null
+	for w in dropped_weapons:
+		if w.KBody.global_position.distance_squared_to(global_position) < 30*30:
+			pickup_weapon = w
+			break
+	
+	# drop held weapon
+	if weapon != GameManager.Weapon.UNARMED:
+		var w = GameManager.weapon_prefab.instance()
+		lvl.add_child(w)
+		w.position = position
+		w.speed = 10
+		w.direction = $Cursor.position.angle()
+		w.weapon_id = weapon
+		var l = GameManager.player_wad.single_frame("Atlases/Weapons.meta", "spr" + GameManager.get_weapon_name(weapon))
+		w.sprite.texture = l[0]
+		w.sprite.offset = l[1]
+		w.get_node("Smoothing2D").teleport()
+		give_weapon(GameManager.Weapon.UNARMED)
+	
+	if pickup_weapon:
+		give_weapon(pickup_weapon.weapon_id)
+		pickup_weapon.queue_free()
+
+func attack():
+	if reload > 0 or "Attack" in sprite_dummy.animation:
+		return
+	if GameManager.weapon_type(weapon) == GameManager.Weapon_t.GUN:
+		shoot()
+	# set attack anim
+	var anim = sprite_dummy.animation
+	if "Walk" in anim:
+		anim = anim.replace("Unarmed", "Punch")
+		if weapon == GameManager.Weapon.DOUBLE_BARREL:
+			anim += '1'
+		sprite_dummy.play(anim.replace("Walk", "Attack"))
+		if GameManager.weapon_type(weapon) == GameManager.Weapon_t.MELEE:
+			sprite_dummy.frame = 1
+		if GameManager.weapon_type(weapon) == GameManager.Weapon_t.GUN:
+			sprite_dummy.speed_scale = 0.5
+		else:
+			sprite_dummy.speed_scale = 0.35
+
+func shoot():
+	var d = GameManager.gun_stats[weapon][0]
+	var r = GameManager.gun_stats[weapon][1]
+	var dir = $Cursor.position.angle()
+	var spawn_pos = Vector2(d,0).rotated(dir + deg2rad(r))
+	var lvl = get_tree().get_nodes_in_group("Level")[0]
+	for i in range(GameManager.gun_stats[weapon][4]):
+		var bullet = GameManager.bullet_prefab.instance()
+		lvl.get_node("Bullets").add_child(bullet)
+		bullet.speed = 16 - randf() * GameManager.gun_stats[weapon][5]
+		bullet.rotation = dir + deg2rad(randf() * GameManager.gun_stats[weapon][2] - 0.5 * GameManager.gun_stats[weapon][2])
+		bullet.position = position + spawn_pos
+		bullet.KBody.collision_mask = 0b00000000000000000110
+		bullet.get_node("Smoothing2D").teleport()
+		bullet.calibre = 1/max(1, GameManager.gun_stats[weapon][4] * 0.3)
+	reload = GameManager.gun_stats[weapon][3]
+
+func _on_AnimatedSprite_animation_finished():
+	if GameManager.weapon_type(weapon) == GameManager.Weapon_t.MELEE or weapon == GameManager.Weapon.UNARMED:
+		sprite_dummy.scale *= Vector2(1, -1)
+
+	var anim = sprite_dummy.animation
+	if "Attack" in anim:
+		if weapon == GameManager.Weapon.DOUBLE_BARREL:
+			anim = anim.replace('Barrel1', '') # double barrel being annoying
+			anim = anim.replace('Barrel2', '')
+		anim = anim.replace("Punch", "Unarmed")
+		sprite_dummy.play(anim.replace("Attack", "Walk"))
+		sprite_dummy.stop()
+		sprite_dummy.frame = 0
 
 func player_move(delta):
 	var normalized_delta = 60 * delta
@@ -178,25 +289,25 @@ func player_move(delta):
 	
 	var jd = 8
 	if (abs(myxspeed) > 0):
-		if (!place_free(x + myxspeed, y)):
+		if (place_free(x + myxspeed, y)):
 			x += myxspeed
 		elif (myyspeed == 0):
-			if (!place_free(x + myxspeed, y - jd)):
-				y -= myspeed
-			elif (!place_free(x + myxspeed, y + jd)):
-				y += myspeed
+			if (place_free(x + myxspeed, y - jd)):
+				_myyspeed -= _myspeed
+			elif (place_free(x + myxspeed, y + jd)):
+				_myyspeed += _myspeed
 			else:
 				#move_contact_solid(90 - sign(myxspeed) * 90, abs(myxspeed));
 				_myxspeed = 0
 
 	if (abs(myyspeed) > 0):
-		if (!place_free(x, y + myyspeed)):
+		if (place_free(x, y + myyspeed)):
 			y += myyspeed 
 		elif (myxspeed == 0):
-			if (!place_free(x - jd, y + myyspeed)):
-				x -= myspeed
-			elif (!place_free(x + jd, y + myyspeed)):
-				x += myspeed
+			if (place_free(x - jd, y + myyspeed)):
+				_myxspeed -= _myspeed
+			elif (place_free(x + jd, y + myyspeed)):
+				_myxspeed += _myspeed
 			else:
 				_myyspeed = 0
 	
@@ -207,37 +318,16 @@ func player_move(delta):
 	myxspeed = _myxspeed
 	myyspeed = _myyspeed
 	myspeed = _myspeed
-	position = Vector2(x, y)
-	#move_and_slide()
+	#position = Vector2(x, y)
+	var v = move_and_slide(Vector2(myxspeed, myyspeed)*60)
+	if v.length_squared() == 0:
+		myxspeed = 0
+		myyspeed = 0
 
-func place_free(x,y):
-	var v = Vector2(x,y) - position
-	#var c = move_and_collide(Vector2(1000 * (v.x/1000), 1000 * (v.y/1000)), true, true, true)
-	#var c = move_and_collide(v, true, true, true)
-	var c = test_move(transform, v)
-	return c
-	
-	#print(Vector2(x,y) - position)
-	#return test_move(transform, Vector2(x,y) - position)
 
-func attack():
-	if "Walk" in sprite_dummy.animation:
-		if "Unarmed" in sprite_dummy.animation:
-			sprite_dummy.play(sprite_dummy.animation.replace("WalkUnarmed", "AttackPunch"))
-			sprite_dummy.speed_scale = 0.35
-		else:
-			sprite_dummy.play(sprite_dummy.animation.replace("Walk", "Attack"))
-			sprite_dummy.speed_scale = 0.35
-
-func _on_AnimatedSprite_animation_finished():
-	if GameManager.weapon_type(weapon) == GameManager.Weapon_t.MELEE or weapon == GameManager.Weapon.UNARMED:
-		sprite_dummy.flip_v = !sprite_dummy.flip_v
-	if "Attack" in sprite_dummy.animation:
-		if "Punch" in sprite_dummy.animation:
-			sprite_dummy.play(sprite_dummy.animation.replace("AttackPunch", "WalkUnarmed"))
-			sprite_dummy.stop()
-			sprite_dummy.frame = 0
-		else:
-			sprite_dummy.play(sprite_dummy.animation.replace("Attack", "Walk"))
-			sprite_dummy.stop()
-			sprite_dummy.frame = 0
+func _on_Area2D_body_entered(body):
+	if (GameManager.weapon_type(weapon) == GameManager.Weapon_t.MELEE\
+	or GameManager.weapon_type(weapon) == GameManager.Weapon_t.BLUNT)\
+	and "Attack" in sprite_dummy.animation:
+		if body.get_parent().is_in_group("Enemy"):
+			body.get_parent().die()

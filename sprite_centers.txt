@@ -4745,7 +4745,7 @@ sprVBorder
 0 
 0 
 sprBullet
-16 
+0 
 0 
 sprBulletLSD
 16 

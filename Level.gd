@@ -2,11 +2,33 @@ extends Node2D
 
 var objects = null
 #export var file_path = "res://demo_levels/tiletest/level0.play"
-export var file_path = "res://demo_levels/Shibuya/main0_1.play"
-var enemy_prefab = load("res://Enemy.tscn")
+export var file_path = "res://demo_levels/Shibuya/main0_0.play"
+var enemy_prefab = preload("res://Enemy.tscn")
+
+var sprite_meta_table_cache = {}
+
 
 func _ready():
 	# apply level mods/ folder
+	var levels_path = file_path.substr(0,file_path.find_last('/'))+'/'
+	for f in list_files_in_directory(levels_path):
+		if '.play' in f and !("outro" in f) and !("intro" in f):
+			if !(levels_path + f in GameManager.lvl_cache):
+				GameManager.lvl_cache[levels_path + f] = false
+
+	var sum = 0
+	for a in GameManager.lvl_cache.values():
+		sum += int(a)
+	if sum == len(GameManager.lvl_cache.values()):
+		for a in GameManager.lvl_cache.keys():
+			GameManager.lvl_cache[a] = false
+
+	for f in GameManager.lvl_cache.keys():
+		if !GameManager.lvl_cache[f]:
+			file_path = f
+			break
+
+	GameManager.lvl_cache[file_path] = true
 	var mods_path = file_path.substr(0,file_path.find_last('/')) + '/mods/'
 	for f in list_files_in_directory(mods_path):
 		GameManager.env_wad.apply_patchwad(mods_path+f)
@@ -19,7 +41,11 @@ func _ready():
 func parse_objects(_file_path):
 	# navmap setup
 	$NavMap.tile_set.create_tile(0)
-	#$NavMap.tile_set.tile_set_texture(0, load("res://icon.png")) # debug
+	$NavMap.tile_set.tile_set_texture(0, load("res://icon16x16.png")) # debug
+	$NavMap.tile_set.create_tile(1)
+	$NavMap.tile_set.tile_set_texture(1, load("res://icon16x16.png")) # debug
+	$NavMap.tile_set.create_tile(2)
+	$NavMap.tile_set.tile_set_texture(2, load("res://icon16x16.png")) # debug
 	
 	# Weapons.meta
 	# Atlases/Player_*.meta
@@ -32,9 +58,13 @@ func parse_objects(_file_path):
 	f.get_line()
 	f.get_line()
 	var file_pos = 2
+	var farthest_position_from_origin = Vector2.ZERO
 	while !f.eof_reached():
 		# load basic information
-		var object = int(f.get_line()); file_pos += 1
+		var tst = f.get_line()
+		if tst == '':
+			break
+		var object = int(tst); file_pos += 1
 		
 		# rain object
 		if object == 663:
@@ -47,12 +77,15 @@ func parse_objects(_file_path):
 		
 		var x = int(f.get_line()); file_pos += 1
 		var y = int(f.get_line()); file_pos += 1
+		farthest_position_from_origin = Vector2(max(x, farthest_position_from_origin.x), max(y, farthest_position_from_origin.y))
 		var sprite = (f.get_line()); file_pos += 1
 		var direction = int(f.get_line()); file_pos += 1
-		var image_speed = float(f.get_line()); file_pos += 1
+		var image_speed = 0
+		if object != 2411:
+			image_speed = float(f.get_line()); file_pos += 1
 
-		# date object
-		if object == 811:
+		# date object		elevator obj
+		if object == 811 or object == 810:
 			f.get_line()
 			continue
 
@@ -79,7 +112,7 @@ func parse_objects(_file_path):
 
 		var obj = WadSprite.new()
 		if "Enemies" in GameManager.object_table[object]['name']:
-			print('o:',GameManager.object_table[object]['name'], ' s:', GameManager.sprite_key_table[sprite], ' i:', image_speed)
+			#print('o:',GameManager.object_table[object]['name'], ' s:', GameManager.sprite_key_table[sprite], ' i:', image_speed)
 			obj = enemy_prefab.instance()
 			$Enemies.add_child(obj)
 			#obj.Body.play(GameManager.sprite_key_table[sprite].get_file())
@@ -88,6 +121,9 @@ func parse_objects(_file_path):
 			obj.position = Vector2(x, y)
 			obj.direction = direction
 			continue
+		elif GameManager.object_table[object]['parent'] == 9:
+			obj = GameManager.shadow_prefab.instance()
+			#obj = GameManager.env_wad.simple_sprite(find_meta_name(sprite))
 		elif image_speed == 0 or image_speed >= 1:
 			obj = Sprite.new()
 
@@ -97,7 +133,9 @@ func parse_objects(_file_path):
 			obj.play(spr_name.get_file())
 			obj.speed_scale = image_speed
 		elif obj is Sprite:
-			obj = GameManager.env_wad.simple_sprite(find_meta_name(sprite))
+			var l = GameManager.env_wad.single_frame(find_meta_name(sprite))
+			obj.texture = l[0]
+			obj.offset = l[1]
 			$Sprites.add_child(obj)
 		
 		obj.position = Vector2(x, y)
@@ -120,11 +158,21 @@ func parse_objects(_file_path):
 				for i in range(x_range + 1):
 					for j in range(y_range + 1):
 						$NavMap.set_cellv($NavMap.world_to_map(obj.position + Vector2(i*16,j*16)), 0)
+	$NavMap.obstacles = $NavMap.get_used_cells_by_id(0)
+	$NavMap.map_size = Vector2(
+		int(farthest_position_from_origin.x / 16),
+		int(farthest_position_from_origin.y / 16)
+	)
+	$NavMap._ready()
 	f.close()
 
 func find_meta_name(sprite):
 	# parse correct internal sprite for editor sprite
 	# Make sure is valid sprite index
+	if sprite in sprite_meta_table_cache:
+		return sprite_meta_table_cache[sprite]
+	
+	var found_meta = "Atlases/Player_Jacket.meta"
 
 	if sprite in GameManager.sprite_key_table:
 
@@ -132,29 +180,29 @@ func find_meta_name(sprite):
 		# Atlases/Sprites + /Furniture/PigButcher/Party/sprELisCouchParty
 		var spr_name = "Atlases/Sprites" + GameManager.sprite_key_table[sprite]
 		if GameManager.env_wad.exists(spr_name + ".meta"):
-			return spr_name + ".meta"
+			found_meta = spr_name + ".meta"
 
 		# edge case garbo
 		elif "/Weapons/" in GameManager.sprite_key_table[sprite]:
 			# weapons
-			return "Atlases/Weapons.meta"
+			found_meta = "Atlases/Weapons.meta"
 
 		elif "/Enemies/" in GameManager.sprite_key_table[sprite]:
 			# enemies
 			var s = GameManager.sprite_key_table[sprite].substr(len("/Enemies/"), 999)
 			s = s.substr(0, s.find("/"))
 			# Atlases/Enemy_ + Henchman + .meta
-			return "Atlases/Enemy_" + s + ".meta"
+			found_meta = "Atlases/Enemy_" + s + ".meta"
 
 		elif "/PlayerCharacters/" in GameManager.sprite_key_table[sprite]:
 			# only catches the player wads!! awesome
 			var s = GameManager.sprite_key_table[sprite].substr(len("/PlayerCharacters/"), 999)
 			s = s.substr(0, s.find("/"))
 			# Atlases/Player_ + Henchman + .meta
-			return "Atlases/Player_" + s + ".meta"
+			found_meta = "Atlases/Player_" + s + ".meta"
 
-	#spr_name = "sprJacketMaskPlayer"
-	return "Atlases/Player_Jacket.meta"
+	sprite_meta_table_cache[sprite] = found_meta
+	return found_meta
 
 func list_files_in_directory(path):
 	var files = []
@@ -206,9 +254,10 @@ func parse_tiles(_file_path):
 					var tex : AtlasTexture = GameManager.env_wad.simple_sprite("Atlases/Backgrounds.meta", d[sheet_index]).texture
 					tex.region = Rect2(tex.region.position + region, Vector2(16,16))
 					for t in depths.values():
-						t.tile_set.create_tile(id)
-						t.tile_set.tile_set_texture(id, tex)
+						if !(id in t.tile_set.get_tiles_ids()):
+							t.tile_set.create_tile(id)
+							t.tile_set.tile_set_texture(id, tex)
 				tilemap.set_cellv(tilemap.world_to_map(world_pos), id)
-			else:
-				print("Couldn't find sheet with index: ", sheet_index)
+			#else:
+			#	print("Couldn't find sheet with index: ", sheet_index)
 	f.close()

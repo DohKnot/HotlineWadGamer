@@ -90,6 +90,75 @@ func sprite_sheet(asset, lazy=0):
 func byte_array_to_int(bytes):
 		return ((bytes[3] & 0xFF) << 24) | ((bytes[2] & 0xFF) << 16) | ((bytes[1] & 0xFF) << 8) | ((bytes[0] & 0xFF) << 0)
 
+func single_frame(asset, specific_sprite='', specific_subimage=0, lazy=0):
+	# returns a single atlas
+	# if no specific sprite is given the first available sprite will be returned
+	# if no specific subimage is given the first available subimage will be used
+	if lazy:
+		asset = lazy_find(asset)
+	
+	var buffer = get(asset)
+	var position = 0x10 + 0x04 + 0x04
+	
+	var cache_name = asset
+	if position < len(buffer):
+		var sprite_name = specific_sprite
+		if sprite_name == '':
+			sprite_name = buffer.subarray(position+1, position+buffer[position]).get_string_from_ascii()
+		cache_name += sprite_name
+		cache_name += str(specific_subimage)
+		
+	if cache_name in loaded_atlases.keys():
+		return loaded_atlases[cache_name]
+	
+
+	var img = AtlasTexture.new()
+	var tex = sprite_sheet(asset.replace(".meta", ".png"), lazy)
+	var offset = Vector2.ZERO
+	
+	while position < len(buffer):
+		# parse sprite name
+		var sprite_name_l = buffer[position]
+		position += 1
+		var sprite_name = buffer.subarray(position, position+sprite_name_l-1).get_string_from_ascii()
+		#sprites.add_animation(sprite_name)
+		
+		# parse sub image count
+		position += sprite_name_l
+		var image_count = byte_array_to_int(buffer.subarray(position, position+4))
+		position += 4
+		
+		# skip sprite if not the specified sprite
+		if specific_sprite != '' and sprite_name != specific_sprite:
+			position += 36 * image_count
+			continue
+		
+		var ref_region = null
+		for i in range(image_count):
+			position += 4
+			if i == specific_subimage:
+				ref_region = Rect2(
+					byte_array_to_int(buffer.subarray(position+8, position+8+4)),
+					byte_array_to_int(buffer.subarray(position+12, position+12+4)),
+					byte_array_to_int(buffer.subarray(position, position+4)),
+					byte_array_to_int(buffer.subarray(position+4, position+4+4))
+				);
+				img.region = ref_region
+				img.atlas = tex
+			position += 32
+		if ref_region != null and sprite_name != "" and sprite_name in sprite_centers:
+			for i in range(0, len(sprite_centers), 3):
+				if sprite_centers[i] == sprite_name:
+					offset = ref_region.size/2 - Vector2(
+						int(sprite_centers[i+1]),
+						int(sprite_centers[i+2])
+					)
+		else:
+			offset = Vector2(0, 0)
+		loaded_atlases[asset + sprite_name + str(specific_subimage)] = [img, offset]
+		return loaded_atlases[asset + sprite_name + str(specific_subimage)]
+	return null
+
 # rename animated_sprite
 func meta_sprite(asset, lazy=0):
 	if lazy:
@@ -149,7 +218,7 @@ func meta_sprite(asset, lazy=0):
 	loaded_metas[asset] = sprites
 	return sprites
 
-func simple_sprite(asset, specific_sprite='', lazy=0):
+func simple_sprite(asset, specific_sprite='', specific_subimage=0, lazy=0):
 	# gets the first subimage of the first sprite of a meta sprite
 	# optionally get the first subimage of a specific sprite
 	
@@ -184,19 +253,20 @@ func simple_sprite(asset, specific_sprite='', lazy=0):
 			continue
 		
 		var ref_region = null
-		if image_count > 0:
+		for i in range(image_count):
 			position += 4
-			var img = AtlasTexture.new()
-			ref_region = Rect2(
-				byte_array_to_int(buffer.subarray(position+8, position+8+4)),
-				byte_array_to_int(buffer.subarray(position+12, position+12+4)),
-				byte_array_to_int(buffer.subarray(position, position+4)),
-				byte_array_to_int(buffer.subarray(position+4, position+4+4))
-			);
-			img.region = ref_region
-			img.atlas = tex
+			if i == specific_subimage:
+				var img = AtlasTexture.new()
+				ref_region = Rect2(
+					byte_array_to_int(buffer.subarray(position+8, position+8+4)),
+					byte_array_to_int(buffer.subarray(position+12, position+12+4)),
+					byte_array_to_int(buffer.subarray(position, position+4)),
+					byte_array_to_int(buffer.subarray(position+4, position+4+4))
+				);
+				img.region = ref_region
+				img.atlas = tex
+				sprite.texture = img
 			position += 32
-			sprite.texture = img
 		if ref_region != null and sprite_name != "" and sprite_name in sprite_centers:
 			for i in range(0, len(sprite_centers), 3):
 				if sprite_centers[i] == sprite_name:
